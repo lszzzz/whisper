@@ -1,4 +1,6 @@
-from transformers import pipeline
+import numpy as np
+
+import whisper
 import torch
 from huggingface_hub import login
 
@@ -9,37 +11,31 @@ else:
     device = "cpu"
     torch_dtype = torch.float32
 
-pipe = pipeline(
-    "automatic-speech-recognition",
-    model="openai/whisper-small",
-    torch_dtype=torch_dtype,
-    device=device,
-)
+model = whisper.load_model("small")
 
 login('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')
 
-from datasets import load_dataset
+from datasets import load_dataset, Audio
+
+# common_voice_test = load_dataset(
+#     "mozilla-foundation/common_voice_13_0", "dv", split="test[:1%]"
+# )
 
 common_voice_test = load_dataset(
-    "mozilla-foundation/common_voice_13_0", "dv", split="test[:1%]"
+    "mozilla-foundation/common_voice_13_0", "en", split="test", streaming=True
 )
+
+common_voice_test = common_voice_test.cast_column("audio", Audio(sampling_rate=16000))
 
 from tqdm import tqdm
 from transformers.pipelines.pt_utils import KeyDataset
 
 all_predictions = []
 
-# 运行流式推理
-for prediction in tqdm(
-    pipe(
-        KeyDataset(common_voice_test, "audio"),
-        max_new_tokens=128,
-        generate_kwargs={"task": "transcribe"},
-        batch_size=1,
-    ),
-    total=len(common_voice_test),
-):
-    all_predictions.append(prediction["text"])
+for data in common_voice_test:
+    result = model.transcribe(data["audio"]["array"].astype(np.float32))
+    print(result)
+    all_predictions.append(result["text"])
 
 from evaluate import load
 
